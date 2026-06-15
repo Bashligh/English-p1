@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>English Learning Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--border:#e5e7eb;--primary:#4f46e5}
+.dark{--bg:#0f172a;--card:#1e293b;--text:#f8fafc;--muted:#94a3b8;--border:#334155}
+*{box-sizing:border-box;font-family:Inter,sans-serif}body{margin:0;background:var(--bg);color:var(--text)}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg)}
+.container{max-width:1200px;margin:auto;padding:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.card,.panel,.segment{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:20px}
+button{padding:11px 16px;border:none;border-radius:12px;background:var(--primary);color:#fff;cursor:pointer}
+.secondary{background:transparent;color:var(--text);border:1px solid var(--border)}
+input,textarea{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);margin:8px 0 14px}
+textarea{min-height:100px}.hidden{display:none!important}nav{display:flex;gap:10px;flex-wrap:wrap}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}
+.modal-content{width:min(1000px,95%);max-height:92vh;overflow:auto;background:var(--card);padding:24px;border-radius:20px}
+.lesson-content{max-width:900px;margin:auto}.favorite{font-size:24px;cursor:pointer}
+.vocab{display:flex;justify-content:space-between;border:1px solid var(--border);padding:14px;border-radius:14px;margin-top:10px}
+.segment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.audio-item{margin:12px 0}
+.admin-row{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--border);padding:12px;border-radius:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+<h2>📘 English Learning</h2>
+<nav>
+<button class="secondary" onclick="showFavorites()">❤️ Favorites</button>
+<button class="secondary" onclick="toggleTheme()">🌙 Theme</button>
+<button onclick="openAdmin()">⚙️ Admin</button>
+</nav>
+</header>
+
+<div class="container">
+<div id="dashboard"></div>
+<div id="lessonView" class="hidden"></div>
+<div id="favoritesView" class="hidden"></div>
+</div>
+
+<div id="adminModal" class="modal hidden">
+<div class="modal-content">
+<h2>Admin Panel</h2>
+<div id="loginSection">
+<input id="adminPassword" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+</div>
+
+<div id="adminSection" class="hidden">
+<input id="title" placeholder="Lesson title">
+<input id="description" placeholder="Short description">
+<div id="segments"></div>
+<button type="button" class="secondary" onclick="addSegment()">+ Add Text Box</button>
+
+<textarea id="grammar" placeholder="Grammar notes"></textarea>
+<textarea id="vocabulary" placeholder='[{"word":"hello","pronunciation":"/həˈləʊ/","meaning":"سلام"}]'></textarea>
+
+<label>Image</label>
+<input id="image" type="file" accept="image/*">
+
+<div id="audioList"></div>
+<button type="button" class="secondary" onclick="addAudioField()">+ Add Audio File</button>
+
+<input type="hidden" id="editingId">
+<br><button onclick="saveLesson()">Save Lesson</button>
+
+<h3>Existing Lessons</h3>
+<div id="adminLessons"></div>
+</div>
+<br><button class="secondary" onclick="closeAdmin()">Close</button>
+</div>
+</div>
+
+<script>
+const PASSWORD="B24@shligh";
+const db=localforage.createInstance({name:"english-app"});
+let lessons=[];
+let favorites=JSON.parse(localStorage.getItem("favorites")||"[]");
+
+async function init(){
+ lessons=await db.getItem("lessons")||[];
+ if(localStorage.theme==="dark")document.body.classList.add("dark");
+ addSegment(); addAudioField(); renderDashboard();
+}
+
+function toggleTheme(){document.body.classList.toggle("dark");localStorage.theme=document.body.classList.contains("dark")?"dark":"light"}
+
+function renderDashboard(){
+ dashboard.classList.remove("hidden");lessonView.classList.add("hidden");favoritesView.classList.add("hidden");
+ dashboard.innerHTML=`<div class="grid">${lessons.map(l=>`<div class="card"><h2>${l.title}</h2><p>${l.description}</p><br><button onclick="openLesson('${l.id}')">Continue</button></div>`).join("")}</div>`;
+}
+
+function openLesson(id){
+ const l=lessons.find(x=>x.id===id); if(!l) return;
+ dashboard.classList.add("hidden");favoritesView.classList.add("hidden");lessonView.classList.remove("hidden");
+
+ lessonView.innerHTML=`<div class="lesson-content">
+ <button class="secondary" onclick="renderDashboard()">← Back</button>
+ <h1>${l.title}</h1><p>${l.description}</p><br>
+
+ <input placeholder="Search text..." oninput="searchText(this.value)">
+
+ ${l.image?`<img src="${l.image}" style="width:100%;border-radius:18px;margin:18px 0">`:""}
+
+ <div id="segmentContainer">
+ ${l.segments.map((s,i)=>`
+ <div class="segment">
+   <div class="segment-header">
+     <strong>Section ${i+1}</strong>
+     <button class="secondary" onclick="toggleSegment(${i})">Minimize</button>
+   </div>
+   <div id="content-${i}">
+     <div class="english">${s.english}</div><br>
+     <button onclick="toggleTranslation(${i})">Show Translation</button>
+     <div id="translation-${i}" class="hidden" style="margin-top:15px">${s.persian}</div>
+   </div>
+ </div><br>`).join("")}
+ </div>
+
+ <div class="panel">
+ <h3>Audio Files</h3>
+ ${l.audios.map((a,i)=>`<div class="audio-item"><strong>${a.name}</strong><audio controls style="width:100%" src="${a.url}"></audio></div>`).join("")}
+ </div><br>
+
+ <div class="panel">
+ <h3>Vocabulary</h3>
+ <input placeholder="Search vocabulary..." oninput="searchVocab(this.value)">
+ <div id="vocabContainer">
+ ${l.vocabulary.map(v=>`<div class="vocab" data-word="${(v.word+' '+v.meaning).toLowerCase()}"><div><strong>${v.word}</strong><br>${v.pronunciation||""}<br>${v.meaning}</div><div class="favorite" onclick='toggleFavorite(${JSON.stringify(v)},${JSON.stringify(l.title)})'>${favorites.some(f=>f.word===v.word)?"❤️":"🤍"}</div></div>`).join("")}
+ </div></div><br>
+
+ <div class="panel"><h3>Grammar Notes</h3>${l.grammar}</div>
+ </div>`;
+}
+
+function searchText(q){
+ document.querySelectorAll(".english").forEach(el=>{
+   const original=el.textContent;
+   if(!q){el.innerHTML=original;return;}
+   const regex=new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
+   el.innerHTML=original.replace(regex,m=>`<mark>${m}</mark>`);
+ });
+}
+
+function searchVocab(q){
+ document.querySelectorAll(".vocab").forEach(v=>v.style.display=v.dataset.word.includes(q.toLowerCase())?"flex":"none");
+}
+
+function toggleSegment(i){document.getElementById(`content-${i}`).classList.toggle("hidden")}
+function toggleTranslation(i){document.getElementById(`translation-${i}`).classList.toggle("hidden")}
+
+function toggleFavorite(v,lesson){
+ favorites=favorites.some(f=>f.word===v.word)?favorites.filter(f=>f.word!==v.word):[...favorites,{...v,lesson}];
+ localStorage.setItem("favorites",JSON.stringify(favorites));
+ showFavorites();
+}
+
+function showFavorites(){
+ dashboard.classList.add("hidden");lessonView.classList.add("hidden");favoritesView.classList.remove("hidden");
+ favoritesView.innerHTML=`<button class="secondary" onclick="renderDashboard()">← Back</button><br><br><div class="grid">${favorites.map(v=>`<div class="card"><h3>${v.word}</h3><p>${v.pronunciation||""}</p><p>${v.meaning}</p><p>${v.lesson}</p></div>`).join("")}</div>`;
+}
+
+function openAdmin(){adminModal.classList.remove("hidden")}
+function closeAdmin(){adminModal.classList.add("hidden")}
+function login(){
+ if(adminPassword.value===PASSWORD){loginSection.classList.add("hidden");adminSection.classList.remove("hidden");renderAdminLessons()}
+ else alert("Wrong password")
+}
+
+function addSegment(en="",fa=""){
+ segments.insertAdjacentHTML("beforeend",`<div class="panel segment-editor">
+<input class="englishInput" placeholder="English text" value="${en.replace(/"/g,'&quot;')}">
+<textarea class="persianInput" placeholder="Persian translation">${fa}</textarea>
+<button class="secondary" onclick="this.parentElement.remove()">Remove Box</button></div>`);
+}
+
+function addAudioField(name="",existing=""){
+ audioList.insertAdjacentHTML("beforeend",`<div class="panel audio-editor">
+<input class="audioName" placeholder="Audio name" value="${name.replace(/"/g,'&quot;')}">
+<input class="audioFile" type="file" accept="audio/*">
+<input class="existingAudio" type="hidden" value='${existing}'>
+<button class="secondary" onclick="this.parentElement.remove()">Remove Audio</button></div>`);
+}
+
+function fileToData(file){return new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsDataURL(file)})}
+
+async function saveLesson(){
+ let vocabularyData=[];
+ try{vocabularyData=JSON.parse(vocabulary.value||"[]")}catch{alert("Vocabulary JSON invalid");return}
+
+ const existing=lessons.find(l=>l.id===editingId.value)||{};
+ const img=image.files[0]?await fileToData(image.files[0]):existing.image||"";
+
+ const segmentData=[...document.querySelectorAll(".segment-editor")].map(x=>({
+  english:x.querySelector(".englishInput").value,
+  persian:x.querySelector(".persianInput").value
+ }));
+
+ const audioData=[];
+ for(const box of document.querySelectorAll(".audio-editor")){
+   const name=box.querySelector(".audioName").value||"Audio";
+   const file=box.querySelector(".audioFile").files[0];
+   const old=box.querySelector(".existingAudio").value;
+   audioData.push({name,url:file?await fileToData(file):old});
+ }
+
+ const data={
+  id:editingId.value||Date.now().toString(),
+  title:title.value,description:description.value,
+  segments:segmentData,grammar:grammar.value,
+  vocabulary:vocabularyData,image:img,audios:audioData
+ };
+
+ const i=lessons.findIndex(l=>l.id===data.id);
+ if(i>-1)lessons[i]=data; else lessons.push(data);
+
+ await db.setItem("lessons",lessons);
+ clearForm();renderAdminLessons();renderDashboard();alert("Saved");
+}
+
+function renderAdminLessons(){
+ adminLessons.innerHTML=lessons.map(l=>`<div class="admin-row"><span>${l.title}</span><div><button onclick="editLesson('${l.id}')">Edit</button> <button class="secondary" onclick="deleteLesson('${l.id}')">Delete</button></div></div>`).join("");
+}
+
+function editLesson(id){
+ const l=lessons.find(x=>x.id===id);
+ editingId.value=l.id;title.value=l.title;description.value=l.description;grammar.value=l.grammar;
+ vocabulary.value=JSON.stringify(l.vocabulary,null,2);
+
+ segments.innerHTML=""; l.segments.forEach(s=>addSegment(s.english,s.persian));
+
+ audioList.innerHTML="";
+ l.audios.forEach(a=>addAudioField(a.name,a.url));
+}
+
+async function deleteLesson(id){
+ if(!confirm("Delete lesson?"))return;
+ lessons=lessons.filter(l=>l.id!==id);
+ await db.setItem("lessons",lessons);
+ renderAdminLessons();renderDashboard();
+}
+
+function clearForm(){
+ editingId.value="";title.value="";description.value="";grammar.value="";vocabulary.value="";
+ segments.innerHTML="";audioList.innerHTML="";
+ addSegment();addAudioField();image.value="";
+}
+
+init();
+</script>
+</body>
+</html>
